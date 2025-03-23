@@ -35,7 +35,8 @@ def get_gmail_service():
             temp_path = temp.name
         
         # Hardcoded redirect URI
-        redirect_uri = "https://prezlab-tms.streamlit.app/_oauth/callback"
+        # In gmail_test.py, change this line:
+        redirect_uri = "https://gmailtest-cdb3ucqipyvc9s9nqd4vvq.streamlit.app/_oauth/callback"
         
         st.write(f"Using redirect URI: {redirect_uri}")
         
