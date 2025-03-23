@@ -42,7 +42,8 @@ def get_gmail_service():
         
         try:
             # Hardcoded redirect URI
-            redirect_uri = "https://gmailtest-cdb3ucqipyvc9s9nqd4vvq.streamlit.app/_oauth/callback"
+            # Modify the hardcoded redirect URI line
+            redirect_uri = "https://gmailtest-cdb3ucqipyvc9s9nqd4vvq.streamlit.app/"  # Note: no /_oauth/callback
             
             st.write(f"Using redirect URI: {redirect_uri}")
             
