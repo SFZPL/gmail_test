@@ -15,101 +15,98 @@ st.set_page_config(page_title="Gmail Test", layout="wide")
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/drive.file']
 
 def get_gmail_service():
-    """Simplified Gmail authentication with proper flow control"""
-    st.write("Session state keys:", list(st.session_state.keys()))
-    st.write("Query parameters:", dict(st.query_params))
+    """
+    Simplified Gmail authentication - exact pattern from working apps
+    """
+    # Debug tab to help troubleshoot authentication issues
+    with st.expander("Authentication Debugging (Expand if having issues)"):
+        st.write("Session state keys:", list(st.session_state.keys()))
+        st.write("Query parameters:", dict(st.query_params))
     
     # Check if we already have credentials
     if "gmail_creds" in st.session_state:
         creds = st.session_state.gmail_creds
-        st.success("Using existing credentials!")
+        # Refresh token if expired
+        if creds and creds.expired and creds.refresh_token:
+            try:
+                creds.refresh(Request())
+                st.session_state.gmail_creds = creds
+            except Exception as e:
+                st.error(f"Error refreshing credentials: {e}")
+                # Clear credentials to restart auth flow
+                del st.session_state.gmail_creds
+                st.rerun()
+    else:
+        # Load client config from Streamlit secrets
         try:
-            return build('gmail', 'v1', credentials=creds)
-        except Exception as e:
-            st.error(f"Error with saved credentials: {str(e)}")
-            # Clear invalid credentials
-            del st.session_state.gmail_creds
-    
-    # Load client config from Streamlit secrets
-    try:
-        client_config_str = get_secret("gcp.client_config")
-        client_config = json.loads(client_config_str)
-        
-        # Create a temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as temp:
-            temp.write(json.dumps(client_config).encode("utf-8"))
-            temp_path = temp.name
-        
-        try:
-            # Hardcoded redirect URI
-            # Modify the hardcoded redirect URI line
-            redirect_uri = "https://gmailtest-cdb3ucqipyvc9s9nqd4vvq.streamlit.app/"  # Note: no /_oauth/callback
+            client_config_str = get_secret("gcp.client_config")
+            client_config = json.loads(client_config_str)
+            
+            # Write the client config to a temporary file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as temp:
+                temp.write(json.dumps(client_config).encode("utf-8"))
+                temp_path = temp.name
+            
+            # CRITICAL: Use the correct redirect URI format without _oauth/callback
+            redirect_uri = "https://gmailtest-cdb3ucqipyvc9s9nqd4vvq.streamlit.app/"
             
             st.write(f"Using redirect URI: {redirect_uri}")
             
-            # Create flow
+            # Create the OAuth flow
             flow = InstalledAppFlow.from_client_secrets_file(
                 temp_path,
                 SCOPES,
                 redirect_uri=redirect_uri
             )
             
-            # Check for code
+            # Check for authorization code in query parameters
             if "code" in st.query_params:
                 try:
+                    # Get the authorization code
                     code = st.query_params["code"]
                     st.write(f"Found code: {code[:10]}...")
                     
-                    # Exchange code for token with timeout
+                    # Exchange code for tokens
                     flow.fetch_token(code=code)
-                    
-                    # Success - store credentials
                     st.session_state.gmail_creds = flow.credentials
-                    st.success("Authentication successful!")
                     
-                    # Give UI time to update
-                    time.sleep(1)
-                    
-                    # Clear the code parameter to prevent reprocessing
+                    # Clean up the URL by removing the query parameters
                     try:
-                        # Try both methods for compatibility
-                        st.experimental_set_query_params()
+                        st.set_query_params()
                     except:
-                        try:
-                            st.query_params.clear()
-                        except:
-                            pass
-                    
-                    # Return the service
-                    return build('gmail', 'v1', credentials=flow.credentials)
+                        pass
+                        
+                    st.success("Authentication successful!")
+                    time.sleep(1)  # Give a moment for the success message to display
+                    st.rerun()  # Rerun to clear the auth parameters from URL
                 except Exception as e:
                     st.error(f"Error exchanging code for token: {str(e)}")
-                    if "gmail_creds" in st.session_state:
-                        del st.session_state.gmail_creds
-                    # CRITICAL: Stop execution to prevent infinite loops
-                    st.stop()
+                    st.write("Please try again.")
+                    # Generate a new authorization URL
+                    auth_url, _ = flow.authorization_url(prompt='consent')
+                    st.markdown(f"[Click here to authenticate with Google]({auth_url})")
+                    st.stop()  # CRITICAL: Stop execution 
             else:
-                # Start auth flow
-                auth_url, _ = flow.authorization_url(
-                    prompt='consent',
-                    access_type='offline'
-                )
-                st.info("Authentication required")
-                st.markdown(f"[Click here to authenticate]({auth_url})")
-                # CRITICAL: Stop execution here to prevent further processing
-                st.stop()
-        finally:
-            # Clean up temporary file
-            try:
-                os.unlink(temp_path)
-            except Exception as e:
-                st.warning(f"Failed to delete temporary file: {e}")
+                # No code parameter, start the auth flow
+                auth_url, _ = flow.authorization_url(prompt='consent', access_type='offline')
+                st.warning("You need to authenticate with Google to access your emails.")
+                st.markdown(f"[Click here to authenticate with Google]({auth_url})")
+                st.stop()  # CRITICAL: Stop execution here
+        except Exception as e:
+            st.error(f"Error during authentication setup: {str(e)}")
+            st.write("Please check your configuration and try again.")
+            st.stop()
+
+    try:
+        # Build the Gmail service with our credentials
+        service = build('gmail', 'v1', credentials=st.session_state.gmail_creds)
+        return service
     except Exception as e:
-        st.error(f"Error: {str(e)}")
+        st.error(f"Error building Gmail service: {str(e)}")
+        # Clear credentials to restart auth flow
+        if "gmail_creds" in st.session_state:
+            del st.session_state.gmail_creds
         st.stop()
-    
-    # This line should never execute due to the st.stop() calls above
-    return None
 
 def main():
     st.title("Gmail API Test")
